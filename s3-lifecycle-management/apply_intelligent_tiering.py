@@ -23,33 +23,8 @@ def get_bucket_lifecycle(bucket_name):
             print(f"Erro ao obter configuração de ciclo de vida do bucket {bucket_name}: {e}")
             raise
 
-def apply_multipart_upload_rule(bucket_name, days=7):
-    """Aplica a regra de ciclo de vida para deletar uploads incompletos após um número de dias."""
-    rules = get_bucket_lifecycle(bucket_name)
-    
-    # Verifica se já há uma regra para multipart uploads
-    if any(rule.get('ID') == 'MultipartUploadRule' for rule in rules):
-        print(f"Regra de multipart upload já aplicada no bucket {bucket_name}.")
-        return
-
-    # Adiciona a regra para excluir uploads incompletos após 'days' dias
-    new_rule = {
-        'ID': 'MultipartUploadRule',
-        'Status': 'Enabled',
-        'Filter': {'Prefix': ''},
-        'AbortIncompleteMultipartUpload': {'DaysAfterInitiation': days}
-    }
-    rules.append(new_rule)
-
-    # Aplica as novas regras de ciclo de vida
-    s3.put_bucket_lifecycle_configuration(
-        Bucket=bucket_name,
-        LifecycleConfiguration={'Rules': rules}
-    )
-    print(f"Regra de multipart upload aplicada no bucket {bucket_name}.")
-
-def apply_intelligent_tiering(bucket_name):
-    """Aplica a regra para mover os objetos para o Intelligent-Tiering."""
+def apply_intelligent_tiering(bucket_name, days=30):
+    """Aplica a regra de ciclo de vida para mover objetos para Intelligent-Tiering após um número de dias."""
     rules = get_bucket_lifecycle(bucket_name)
 
     # Verifica se já há uma regra para Intelligent-Tiering
@@ -57,13 +32,13 @@ def apply_intelligent_tiering(bucket_name):
         print(f"Regra de Intelligent-Tiering já aplicada no bucket {bucket_name}.")
         return
 
-    # Adiciona a regra para mover os objetos para Intelligent-Tiering
+    # Adiciona a regra para mover os objetos para Intelligent-Tiering após 'days' dias
     new_rule = {
         'ID': 'IntelligentTieringRule',
         'Status': 'Enabled',
         'Filter': {'Prefix': ''},
         'Transitions': [{
-            'Days': 30,
+            'Days': days,
             'StorageClass': 'INTELLIGENT_TIERING'
         }]
     }
@@ -77,13 +52,13 @@ def apply_intelligent_tiering(bucket_name):
     print(f"Regra de Intelligent-Tiering aplicada no bucket {bucket_name}.")
 
 def lambda_handler(event, context):
-    """Função Lambda para aplicar regras de ciclo de vida e Intelligent-Tiering."""
+    """Função Lambda para aplicar regras de Intelligent-Tiering."""
+    days = int(event.get('days', 30))  # Permite flexibilidade no número de dias via evento Lambda
     buckets = list_buckets()
 
     for bucket in buckets:
         print(f"Verificando bucket: {bucket}")
-        apply_multipart_upload_rule(bucket)
-        apply_intelligent_tiering(bucket)
+        apply_intelligent_tiering(bucket, days=days)
 
     return {
         'statusCode': 200,
@@ -92,8 +67,8 @@ def lambda_handler(event, context):
 
 # Se você estiver rodando localmente, use isso para executar o script
 if __name__ == "__main__":
+    days = 30  # Defina o número de dias desejado para mover objetos para Intelligent-Tiering
     buckets = list_buckets()
     for bucket in buckets:
         print(f"Verificando bucket: {bucket}")
-        apply_multipart_upload_rule(bucket)
-        apply_intelligent_tiering(bucket)
+        apply_intelligent_tiering(bucket, days=days)
