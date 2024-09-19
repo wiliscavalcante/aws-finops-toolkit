@@ -1,5 +1,6 @@
 import boto3
 import json
+from botocore.exceptions import ClientError
 
 # Inicializando o cliente S3
 s3 = boto3.client('s3')
@@ -14,79 +15,66 @@ def get_bucket_lifecycle(bucket_name):
     try:
         response = s3.get_bucket_lifecycle_configuration(Bucket=bucket_name)
         return response.get('Rules', [])
-    except s3.exceptions.NoSuchLifecycleConfiguration:
-        return []
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == 'NoSuchLifecycleConfiguration':
+            return []
+        else:
+            print(f"Erro ao obter configuração de ciclo de vida do bucket {bucket_name}: {e}")
+            raise
 
 def apply_multipart_upload_rule(bucket_name, days=7):
-    """Aplica ou atualiza a regra de ciclo de vida para deletar uploads incompletos após X dias."""
+    """Aplica a regra de ciclo de vida para deletar uploads incompletos após um número de dias."""
     rules = get_bucket_lifecycle(bucket_name)
     
     # Verifica se já há uma regra para multipart uploads
-    rule_found = False
-    for rule in rules:
-        if rule.get('ID') == 'MultipartUploadRule':
-            rule_found = True
-            # Se a regra existe, atualiza se necessário
-            if rule.get('AbortIncompleteMultipartUpload', {}).get('DaysAfterInitiation') != days:
-                rule['AbortIncompleteMultipartUpload']['DaysAfterInitiation'] = days
-                print(f"Atualizando regra de multipart upload para {days} dias no bucket {bucket_name}.")
-            else:
-                print(f"Regra de multipart upload já configurada corretamente para {days} dias no bucket {bucket_name}.")
-    
-    if not rule_found:
-        # Adiciona a regra para excluir uploads incompletos após X dias
-        new_rule = {
-            'ID': 'MultipartUploadRule',
-            'Status': 'Enabled',
-            'Filter': {'Prefix': ''},
-            'AbortIncompleteMultipartUpload': {'DaysAfterInitiation': days}
-        }
-        rules.append(new_rule)
-        print(f"Adicionando regra de multipart upload para {days} dias no bucket {bucket_name}.")
-    
-    # Aplica as regras de ciclo de vida (adicionadas ou atualizadas)
+    if any(rule.get('ID') == 'MultipartUploadRule' for rule in rules):
+        print(f"Regra de multipart upload já aplicada no bucket {bucket_name}.")
+        return
+
+    # Adiciona a regra para excluir uploads incompletos após 'days' dias
+    new_rule = {
+        'ID': 'MultipartUploadRule',
+        'Status': 'Enabled',
+        'Filter': {'Prefix': ''},
+        'AbortIncompleteMultipartUpload': {'DaysAfterInitiation': days}
+    }
+    rules.append(new_rule)
+
+    # Aplica as novas regras de ciclo de vida
     s3.put_bucket_lifecycle_configuration(
         Bucket=bucket_name,
         LifecycleConfiguration={'Rules': rules}
     )
-    print(f"Regras de ciclo de vida aplicadas no bucket {bucket_name}.")
+    print(f"Regra de multipart upload aplicada no bucket {bucket_name}.")
 
-def apply_intelligent_tiering(bucket_name, days=30):
-    """Aplica ou atualiza a regra para mover objetos para o Intelligent-Tiering após X dias."""
+def apply_intelligent_tiering(bucket_name):
+    """Aplica a regra para mover os objetos para o Intelligent-Tiering."""
     rules = get_bucket_lifecycle(bucket_name)
 
     # Verifica se já há uma regra para Intelligent-Tiering
-    rule_found = False
-    for rule in rules:
-        if rule.get('ID') == 'IntelligentTieringRule':
-            rule_found = True
-            # Se a regra existe, atualiza se necessário
-            if rule.get('Transitions', [{}])[0].get('Days') != days:
-                rule['Transitions'][0]['Days'] = days
-                print(f"Atualizando regra de Intelligent-Tiering para {days} dias no bucket {bucket_name}.")
-            else:
-                print(f"Regra de Intelligent-Tiering já configurada corretamente para {days} dias no bucket {bucket_name}.")
-    
-    if not rule_found:
-        # Adiciona a regra para mover objetos para Intelligent-Tiering após X dias
-        new_rule = {
-            'ID': 'IntelligentTieringRule',
-            'Status': 'Enabled',
-            'Filter': {'Prefix': ''},
-            'Transitions': [{
-                'Days': days,
-                'StorageClass': 'INTELLIGENT_TIERING'
-            }]
-        }
-        rules.append(new_rule)
-        print(f"Adicionando regra de Intelligent-Tiering para {days} dias no bucket {bucket_name}.")
+    if any(rule.get('ID') == 'IntelligentTieringRule' for rule in rules):
+        print(f"Regra de Intelligent-Tiering já aplicada no bucket {bucket_name}.")
+        return
 
-    # Aplica as regras de ciclo de vida (adicionadas ou atualizadas)
+    # Adiciona a regra para mover os objetos para Intelligent-Tiering
+    new_rule = {
+        'ID': 'IntelligentTieringRule',
+        'Status': 'Enabled',
+        'Filter': {'Prefix': ''},
+        'Transitions': [{
+            'Days': 30,
+            'StorageClass': 'INTELLIGENT_TIERING'
+        }]
+    }
+    rules.append(new_rule)
+
+    # Aplica as novas regras de ciclo de vida
     s3.put_bucket_lifecycle_configuration(
         Bucket=bucket_name,
         LifecycleConfiguration={'Rules': rules}
     )
-    print(f"Regras de Intelligent-Tiering aplicadas no bucket {bucket_name}.")
+    print(f"Regra de Intelligent-Tiering aplicada no bucket {bucket_name}.")
 
 def lambda_handler(event, context):
     """Função Lambda para aplicar regras de ciclo de vida e Intelligent-Tiering."""
@@ -94,8 +82,8 @@ def lambda_handler(event, context):
 
     for bucket in buckets:
         print(f"Verificando bucket: {bucket}")
-        apply_multipart_upload_rule(bucket, days=7)
-        apply_intelligent_tiering(bucket, days=30)
+        apply_multipart_upload_rule(bucket)
+        apply_intelligent_tiering(bucket)
 
     return {
         'statusCode': 200,
@@ -107,5 +95,5 @@ if __name__ == "__main__":
     buckets = list_buckets()
     for bucket in buckets:
         print(f"Verificando bucket: {bucket}")
-        apply_multipart_upload_rule(bucket, days=7)
-        apply_intelligent_tiering(bucket, days=30)
+        apply_multipart_upload_rule(bucket)
+        apply_intelligent_tiering(bucket)
