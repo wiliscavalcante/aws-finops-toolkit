@@ -36,18 +36,6 @@ O script irá:
 - Verificar se as regras de ciclo de vida estão presentes.
 - Aplicar as regras para **multipart upload** e **Intelligent-Tiering**, se necessário.
 
-## Execução via Lambda
-
-Este script pode ser convertido em uma função AWS Lambda. Basta copiar o conteúdo do arquivo `lifecycle_management.py` para o console do Lambda, configurando o runtime para Python e atribuindo as permissões necessárias.
-
-### Configuração Lambda
-
-1. No painel AWS Lambda, crie uma nova função com o runtime **Python**.
-2. Cole o conteúdo do arquivo `lifecycle_management.py` no editor de código do Lambda.
-3. Configure o IAM Role com permissões para:
-   - Listar buckets S3 (`s3:ListAllMyBuckets`)
-   - Ler regras de ciclo de vida (`s3:GetLifecycleConfiguration`)
-   - Escrever regras de ciclo de vida (`s3:PutLifecycleConfiguration`)
 
 ## Personalizações
 
