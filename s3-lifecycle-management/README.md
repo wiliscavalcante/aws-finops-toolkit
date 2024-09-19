@@ -36,7 +36,6 @@ O script irá:
 - Verificar se as regras de ciclo de vida estão presentes.
 - Aplicar as regras para **multipart upload** e **Intelligent-Tiering**, se necessário.
 
-
 ## Personalizações
 
 - **Dias de retenção para uploads incompletos**: A regra de multipart upload pode ser personalizada para excluir uploads incompletos após um período diferente de 7 dias.
